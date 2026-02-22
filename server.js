@@ -78,7 +78,7 @@ app.post("/api/auth/login", (req, res) => {
   const candidate = typeof req.body?.password === "string" ? req.body.password : "";
   if (!safeEqual(candidate, APP_PASSWORD)) {
     registerFailedAttempt(ip);
-    return res.status(401).json({ error: "Contrasena incorrecta" });
+    return res.status(401).json({ error: "Contrasena incorrecta." });
   }
 
   clearFailedAttempts(ip);
@@ -148,12 +148,12 @@ app.post(
   asyncHandler(async (req, res) => {
     const docId = normalizeDocumentId(req.params.id);
     if (!docId) {
-      return res.status(400).json({ error: "Identificador de documento invalido." });
+      return res.status(400).json({ error: "Identificador de derecho de peticion invalido." });
     }
 
     const existingRecord = await findDocumentRecordById(docId);
     if (!existingRecord) {
-      return res.status(404).json({ error: "Documento no encontrado." });
+      return res.status(404).json({ error: "Derecho de peticion no encontrado." });
     }
 
     const file = validateUploadedFile(req.file);
@@ -193,12 +193,12 @@ app.delete(
   asyncHandler(async (req, res) => {
     const docId = normalizeDocumentId(req.params.id);
     if (!docId) {
-      return res.status(400).json({ error: "Identificador de documento invalido." });
+      return res.status(400).json({ error: "Identificador de derecho de peticion invalido." });
     }
 
     const existingRecord = await findDocumentRecordById(docId);
     if (!existingRecord) {
-      return res.status(404).json({ error: "Documento no encontrado." });
+      return res.status(404).json({ error: "Derecho de peticion no encontrado." });
     }
 
     await removeFromStorage([existingRecord.pendingPath, existingRecord.signedPath, existingRecord.currentPath]);
@@ -234,7 +234,7 @@ async function startServer() {
   try {
     await ensureBucketExists();
     app.listen(port, () => {
-      console.log("E-Bandeja disponible en http://localhost:" + port);
+      console.log("SIGDEP disponible en http://localhost:" + port);
     });
   } catch (error) {
     console.error("Error al iniciar el servidor:", error.message || error);
@@ -404,7 +404,7 @@ function sanitizeFileName(fileName, extension) {
     .replace(/[\/\\]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const safeBase = cleanedBase || "documento";
+  const safeBase = cleanedBase || "derecho_peticion";
   return safeBase + extensionWithDot;
 }
 
@@ -423,16 +423,16 @@ function getExtension(fileName) {
 
 function validateUploadedFile(file) {
   if (!file) {
-    throw createHttpError(400, "No se recibio ningun archivo.");
+    throw createHttpError(400, "No se recibio ningun archivo para el derecho de peticion.");
   }
 
   const extension = getExtension(file.originalname);
   if (!ALLOWED_EXTENSIONS.has(extension)) {
-    throw createHttpError(400, "Formato invalido. Solo se permiten PDF y DOCX.");
+    throw createHttpError(400, "Formato invalido. Solo se permiten PDF y DOCX para derechos de peticion.");
   }
 
   if (file.mimetype && !ALLOWED_MIME_TYPES.has(file.mimetype)) {
-    throw createHttpError(400, "Tipo MIME no permitido para este archivo.");
+    throw createHttpError(400, "Tipo MIME no permitido para este derecho de peticion.");
   }
 
   if (!file.buffer || file.buffer.length === 0) {
@@ -499,7 +499,7 @@ async function listFolderObjects(folder) {
       .list(folder, { limit: 1000, offset, sortBy: { column: "name", order: "asc" } });
 
     if (error) {
-      throw createHttpError(500, "No se pudo listar archivos en Supabase Storage.");
+      throw createHttpError(500, "No se pudo listar archivos de derechos de peticion en Supabase Storage.");
     }
 
     if (!Array.isArray(data) || data.length === 0) {
@@ -600,7 +600,7 @@ async function toClientDocument(record) {
     .createSignedUrl(record.currentPath, FILE_URL_TTL_SECONDS);
 
   if (error || !data?.signedUrl) {
-    throw createHttpError(500, "No se pudo generar URL firmada para el archivo.");
+    throw createHttpError(500, "No se pudo generar la URL firmada del derecho de peticion.");
   }
 
   return {
@@ -620,7 +620,7 @@ async function uploadToStorage(storagePath, file, options = {}) {
   });
 
   if (error) {
-    throw createHttpError(500, "No se pudo subir el archivo a Supabase Storage.");
+    throw createHttpError(500, "No se pudo cargar el archivo del derecho de peticion en Supabase Storage.");
   }
 }
 
@@ -632,7 +632,7 @@ async function removeFromStorage(paths) {
 
   const { error } = await supabase.storage.from(SUPABASE_BUCKET).remove(uniquePaths);
   if (error) {
-    throw createHttpError(500, "No se pudo eliminar el archivo en Supabase Storage.");
+    throw createHttpError(500, "No se pudo eliminar el archivo del derecho de peticion en Supabase Storage.");
   }
 }
 

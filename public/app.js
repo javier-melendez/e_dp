@@ -7,7 +7,7 @@ const el = {};
 
 document.addEventListener("DOMContentLoaded", () => {
   init().catch(() => {
-    window.alert("No fue posible iniciar la aplicacion.");
+    window.alert("No fue posible iniciar SIGDEP.");
   });
 });
 
@@ -84,7 +84,7 @@ function bindEvents() {
 async function checkPassword() {
   const password = el.passwordInput.value;
   if (!password) {
-    window.alert("Ingresa la contrasena");
+    window.alert("Ingresa la contrasena de acceso.");
     return;
   }
 
@@ -102,7 +102,7 @@ async function checkPassword() {
 
     if (!response.ok) {
       const payload = await safeReadJson(response);
-      window.alert(payload.error || "Contrasena incorrecta");
+      window.alert(payload.error || "Contrasena incorrecta.");
       return;
     }
 
@@ -110,7 +110,7 @@ async function checkPassword() {
     showMainInterface();
     await loadDocuments();
   } catch (_error) {
-    window.alert("No fue posible validar la contrasena.");
+    window.alert("No fue posible validar la contrasena de acceso.");
   } finally {
     setLoginLoading(false);
   }
@@ -160,7 +160,7 @@ function showLoginInterface() {
 function setLoginLoading(isLoading) {
   el.loginBtn.disabled = isLoading;
   el.passwordInput.disabled = isLoading;
-  el.loginBtn.textContent = isLoading ? "Validando..." : "Ingresar";
+  el.loginBtn.textContent = isLoading ? "Validando..." : "Ingresar al sistema";
   el.loginBtn.classList.toggle("opacity-60", isLoading);
   el.loginBtn.classList.toggle("cursor-not-allowed", isLoading);
 }
@@ -196,7 +196,7 @@ async function loadDocuments(options = {}) {
 
     if (!response.ok) {
       const payload = await safeReadJson(response);
-      window.alert(payload.error || "No fue posible cargar documentos.");
+      window.alert(payload.error || "No fue posible cargar la bandeja de derechos de peticion.");
       return;
     }
 
@@ -223,7 +223,7 @@ async function loadDocuments(options = {}) {
       resetPreview();
     }
   } catch (_error) {
-    window.alert("No fue posible cargar los documentos.");
+    window.alert("No fue posible cargar la bandeja de derechos de peticion.");
   } finally {
     loadingDocuments = false;
   }
@@ -236,7 +236,7 @@ function mapApiDocument(apiDoc, previousDoc) {
 
   return {
     id: String(apiDoc.id || ""),
-    name: String(apiDoc.name || "documento"),
+    name: String(apiDoc.name || "derecho_peticion"),
     type: type || getExtension(apiDoc.name),
     status: String(apiDoc.status || "Pendiente"),
     date: formatServerDate(apiDoc.createdAt),
@@ -267,7 +267,7 @@ async function handleNewUpload(event) {
 
   const extension = getExtension(file.name);
   if (extension !== "pdf" && extension !== "docx") {
-    window.alert("Solo se permiten archivos PDF y DOCX.");
+    window.alert("Solo se permiten archivos PDF y DOCX para derechos de peticion.");
     return;
   }
 
@@ -282,13 +282,13 @@ async function handleNewUpload(event) {
 
     const payload = await safeReadJson(response);
     if (!response.ok) {
-      window.alert(payload.error || "No fue posible cargar el archivo.");
+      window.alert(payload.error || "No fue posible cargar el borrador del derecho de peticion.");
       return;
     }
 
     await loadDocuments({ focusId: payload.document?.id || null });
   } catch (_error) {
-    window.alert("No fue posible cargar el archivo.");
+    window.alert("No fue posible cargar el borrador del derecho de peticion.");
   }
 }
 
@@ -320,7 +320,7 @@ function showPreview(id) {
   if (doc.status === "Pendiente") {
     el.statusDot.className = "w-3 h-3 rounded-full bg-amber-500 animate-pulse";
     el.btnAction.className = "px-4 py-1.5 bg-indigo-600 text-white text-xs rounded-xl font-bold hover:bg-indigo-700 transition";
-    el.btnAction.textContent = "Descargar y firmar";
+    el.btnAction.textContent = "Descargar para revisar y firmar";
     primaryAction = () => {
       toggleOverlay(true);
     };
@@ -338,7 +338,7 @@ function showPreview(id) {
     el.previewIframe.removeAttribute("src");
 
     if (!doc.isPreviewReady) {
-      el.previewIframe.srcdoc = buildInfoIframe("Procesando DOCX", "Estamos generando la vista previa del documento.");
+      el.previewIframe.srcdoc = buildInfoIframe("Procesando DOCX", "Estamos preparando la vista previa para revision.");
       if (!doc.isPreviewLoading) {
         loadRemoteDocxPreview(doc.id);
       }
@@ -349,7 +349,7 @@ function showPreview(id) {
     }
   } else {
     el.previewIframe.removeAttribute("src");
-    el.previewIframe.srcdoc = buildInfoIframe("Formato no compatible", "Solo se soporta vista previa para PDF y DOCX.");
+    el.previewIframe.srcdoc = buildInfoIframe("Formato no compatible", "Solo hay vista previa para archivos PDF y DOCX.");
   }
 
   render();
@@ -380,7 +380,7 @@ async function loadRemoteDocxPreview(docId) {
     doc.isPreviewLoading = false;
   } catch (_error) {
     doc.docxHtml = "";
-    doc.previewError = "No se pudo cargar el archivo DOCX para vista previa.";
+    doc.previewError = "No se pudo cargar la vista previa del archivo DOCX.";
     doc.isPreviewReady = true;
     doc.isPreviewLoading = false;
   }
@@ -405,7 +405,7 @@ async function completeFirma(event) {
 
   const extension = getExtension(file.name);
   if (extension !== "pdf" && extension !== "docx") {
-    window.alert("Solo se permiten archivos PDF y DOCX.");
+    window.alert("Solo se permiten archivos PDF y DOCX para derechos de peticion.");
     return;
   }
 
@@ -420,14 +420,14 @@ async function completeFirma(event) {
 
     const payload = await safeReadJson(response);
     if (!response.ok) {
-      window.alert(payload.error || "No fue posible firmar el documento.");
+      window.alert(payload.error || "No fue posible cargar la version firmada.");
       return;
     }
 
     toggleOverlay(false);
     await loadDocuments({ focusId: payload.document?.id || activeDocId });
   } catch (_error) {
-    window.alert("No fue posible firmar el documento.");
+    window.alert("No fue posible cargar la version firmada.");
   }
 }
 
@@ -444,7 +444,7 @@ async function deleteDoc(id) {
 
     const payload = await safeReadJson(response);
     if (!response.ok) {
-      window.alert(payload.error || "No fue posible eliminar el documento.");
+      window.alert(payload.error || "No fue posible eliminar el derecho de peticion.");
       return;
     }
 
@@ -454,7 +454,7 @@ async function deleteDoc(id) {
 
     await loadDocuments();
   } catch (_error) {
-    window.alert("No fue posible eliminar el documento.");
+    window.alert("No fue posible eliminar el derecho de peticion.");
   }
 }
 
@@ -462,7 +462,7 @@ function render() {
   el.badgeCounter.textContent = String(documents.length);
 
   if (documents.length === 0) {
-    el.docList.innerHTML = "<div class='p-8 text-center text-slate-300 text-xs italic'>No hay documentos en la bandeja</div>";
+    el.docList.innerHTML = "<div class='p-8 text-center text-slate-300 text-xs italic'>No hay derechos de peticion en la bandeja</div>";
     if (!activeDocId) {
       resetPreview();
     }
@@ -510,7 +510,7 @@ function resetPreview() {
   el.previewActions.classList.add("hidden");
   el.previewFrameContainer.classList.add("hidden");
   el.previewPlaceholder.classList.remove("hidden");
-  el.previewTitle.textContent = "Visor de Documentos";
+  el.previewTitle.textContent = "Vista previa del derecho de peticion";
   el.statusDot.className = "w-3 h-3 rounded-full bg-slate-200";
   el.previewIframe.removeAttribute("src");
   el.previewIframe.removeAttribute("srcdoc");
@@ -521,7 +521,7 @@ async function buildDocxPreviewFromArrayBuffer(arrayBuffer) {
   if (!window.mammoth || typeof window.mammoth.convertToHtml !== "function") {
     return {
       html: "",
-      error: "No se pudo cargar el visor DOCX. Recarga la pagina e intenta otra vez."
+      error: "No se pudo cargar el visor DOCX. Recarga la pagina e intenta nuevamente."
     };
   }
 
@@ -540,7 +540,7 @@ async function buildDocxPreviewFromArrayBuffer(arrayBuffer) {
   } catch (_error) {
     return {
       html: "",
-      error: "El archivo DOCX no se pudo procesar correctamente."
+      error: "El archivo DOCX no se pudo procesar para la vista previa."
     };
   }
 }

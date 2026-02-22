@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>E-Bandeja: Flujo Inteligente</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
   <link rel="stylesheet" href="./public/styles.css">
   <script src="./public/app.js" defer></script>
 </head>
@@ -56,7 +57,7 @@
         <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
           <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-4">Enviar nuevo archivo</h3>
           <label class="group block cursor-pointer">
-            <input type="file" id="mainUpload" class="hidden">
+            <input type="file" id="mainUpload" class="hidden" accept=".pdf,.docx">
             <span class="border-2 border-dashed border-slate-100 group-hover:border-indigo-300 group-hover:bg-indigo-50 rounded-2xl p-8 text-center transition-all block">
               <span class="text-indigo-400 mb-2 flex justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -107,7 +108,7 @@
               <div class="bg-white p-8 rounded-[2rem] max-w-sm w-full shadow-2xl text-center">
                 <h4 class="font-black text-slate-800 mb-2 uppercase text-sm">Subir version firmada</h4>
                 <p class="text-xs text-slate-500 mb-6">Esta accion marcara el documento como completado y reemplazara la vista previa.</p>
-                <input type="file" id="secondaryUpload" class="hidden">
+                <input type="file" id="secondaryUpload" class="hidden" accept=".pdf,.docx">
                 <label for="secondaryUpload" class="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl mb-3 cursor-pointer hover:bg-indigo-700 transition">Seleccionar Archivo</label>
                 <button id="overlayCancelBtn" type="button" class="text-slate-400 text-xs font-bold hover:text-slate-600">Cancelar</button>
               </div>

@@ -180,25 +180,47 @@ async function safeReadJson(response) {
   }
 }
 
-function handleNewUpload(event) {
+async function handleNewUpload(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) {
     return;
   }
 
+  const fileType = getExtension(file.name);
   const newDoc = {
     id: generateId(),
     name: file.name,
-    type: getExtension(file.name),
+    type: fileType,
     status: "Pendiente",
     date: formatNow(),
-    url: URL.createObjectURL(file)
+    url: URL.createObjectURL(file),
+    docxHtml: "",
+    previewError: "",
+    isPreviewReady: fileType !== "docx"
   };
 
   documents.unshift(newDoc);
   event.target.value = "";
   render();
   showPreview(newDoc.id);
+
+  if (fileType === "docx") {
+    const preview = await buildDocxPreview(file);
+    const currentDoc = documents.find((doc) => doc.id === newDoc.id);
+    if (!currentDoc) {
+      return;
+    }
+
+    currentDoc.docxHtml = preview.html;
+    currentDoc.previewError = preview.error;
+    currentDoc.isPreviewReady = true;
+
+    if (activeDocId === currentDoc.id) {
+      showPreview(currentDoc.id);
+    } else {
+      render();
+    }
+  }
 }
 
 function handleDocListClick(event) {
@@ -244,13 +266,28 @@ function showPreview(id) {
   if (doc.type === "pdf") {
     el.previewIframe.removeAttribute("srcdoc");
     el.previewIframe.src = doc.url;
+  } else if (doc.type === "docx") {
+    el.previewIframe.removeAttribute("src");
+
+    if (!doc.isPreviewReady) {
+      el.previewIframe.srcdoc = buildInfoIframe(
+        "Procesando DOCX",
+        "Estamos generando la vista previa del documento."
+      );
+    } else if (doc.previewError) {
+      el.previewIframe.srcdoc = buildInfoIframe(
+        "No se pudo renderizar el DOCX",
+        doc.previewError
+      );
+    } else {
+      el.previewIframe.srcdoc = buildDocxIframe(doc.docxHtml);
+    }
   } else {
     el.previewIframe.removeAttribute("src");
-    el.previewIframe.srcdoc =
-      "<div style='padding:40px;font-family:sans-serif;text-align:center;color:#94a3b8;'>" +
-      "<p><b>Vista previa de Word</b></p>" +
-      "<p style='font-size:12px;'>(Requiere servidor publico para renderizado completo)</p>" +
-      "</div>";
+    el.previewIframe.srcdoc = buildInfoIframe(
+      "Formato no compatible",
+      "Solo se soporta vista previa para PDF y DOCX."
+    );
   }
 
   render();
@@ -260,7 +297,7 @@ function toggleOverlay(show) {
   el.uploadOverlay.classList.toggle("hidden", !show);
 }
 
-function completeFirma(event) {
+async function completeFirma(event) {
   const file = event.target.files && event.target.files[0];
   if (!file || !activeDocId) {
     return;
@@ -277,11 +314,32 @@ function completeFirma(event) {
   doc.type = getExtension(file.name) || doc.type;
   doc.date = formatNow();
   doc.url = URL.createObjectURL(file);
+  doc.docxHtml = "";
+  doc.previewError = "";
+  doc.isPreviewReady = doc.type !== "docx";
 
   event.target.value = "";
   toggleOverlay(false);
   showPreview(doc.id);
   render();
+
+  if (doc.type === "docx") {
+    const preview = await buildDocxPreview(file);
+    const currentDoc = documents.find((item) => item.id === doc.id);
+    if (!currentDoc) {
+      return;
+    }
+
+    currentDoc.docxHtml = preview.html;
+    currentDoc.previewError = preview.error;
+    currentDoc.isPreviewReady = true;
+
+    if (activeDocId === currentDoc.id) {
+      showPreview(currentDoc.id);
+    } else {
+      render();
+    }
+  }
 }
 
 function deleteDoc(id) {
@@ -316,7 +374,7 @@ function render() {
     .map((doc) => {
       const isPending = doc.status === "Pendiente";
       const isActive = activeDocId === doc.id;
-      const typeLabel = doc.type === "pdf" ? "PDF" : "DOC";
+      const typeLabel = doc.type === "pdf" ? "PDF" : doc.type === "docx" ? "DOCX" : "DOC";
 
       return (
         "<article data-doc-id='" + doc.id + "' class='doc-card " +
@@ -358,6 +416,85 @@ function resetPreview() {
   el.previewIframe.removeAttribute("src");
   el.previewIframe.removeAttribute("srcdoc");
   primaryAction = null;
+}
+
+async function buildDocxPreview(file) {
+  if (!window.mammoth || typeof window.mammoth.convertToHtml !== "function") {
+    return {
+      html: "",
+      error: "No se pudo cargar el visor DOCX. Recarga la pagina e intenta otra vez."
+    };
+  }
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await window.mammoth.convertToHtml({ arrayBuffer });
+    const html = sanitizeDocxHtml(result.value || "");
+
+    if (!html.trim()) {
+      return {
+        html: "",
+        error: "El DOCX no tiene contenido visible para vista previa."
+      };
+    }
+
+    return { html, error: "" };
+  } catch (_error) {
+    return {
+      html: "",
+      error: "El archivo DOCX no se pudo procesar correctamente."
+    };
+  }
+}
+
+function sanitizeDocxHtml(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+
+  doc.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach((node) => {
+    node.remove();
+  });
+
+  doc.querySelectorAll("*").forEach((node) => {
+    for (const attr of Array.from(node.attributes)) {
+      const name = attr.name.toLowerCase();
+      const value = (attr.value || "").trim();
+      const isScriptAttr = name.startsWith("on");
+      const isUnsafeLink = (name === "href" || name === "src" || name === "xlink:href") && /^javascript:/i.test(value);
+
+      if (isScriptAttr || isUnsafeLink) {
+        node.removeAttribute(attr.name);
+      }
+    }
+  });
+
+  return doc.body.innerHTML;
+}
+
+function buildDocxIframe(innerHtml) {
+  return (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+    "<style>" +
+    "body{font-family:Calibri,Arial,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:32px;line-height:1.6;}" +
+    ".page{background:#fff;max-width:900px;margin:0 auto;padding:40px;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 4px 20px rgba(15,23,42,.06);}" +
+    "p{margin:0 0 1em;}" +
+    "table{border-collapse:collapse;max-width:100%;}" +
+    "td,th{border:1px solid #cbd5e1;padding:6px;vertical-align:top;}" +
+    "img{max-width:100%;height:auto;}" +
+    "</style></head><body><article class='page'>" +
+    innerHtml +
+    "</article></body></html>"
+  );
+}
+
+function buildInfoIframe(title, message) {
+  return (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#f8fafc;font-family:ui-sans-serif,system-ui,sans-serif;color:#94a3b8;'>" +
+    "<div style='text-align:center;padding:24px;max-width:420px;'>" +
+    "<p style='margin:0 0 8px;font-weight:700;color:#475569;'>" + escapeHtml(title) + "</p>" +
+    "<p style='margin:0;font-size:13px;line-height:1.5;'>" + escapeHtml(message) + "</p>" +
+    "</div></body></html>"
+  );
 }
 
 function generateId() {

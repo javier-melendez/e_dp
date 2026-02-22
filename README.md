@@ -25,10 +25,13 @@ Proyecto listo para desplegar en Render como **Web Service** con Node.js.
 npm install
 ```
 
-2. Define la contrasena en variable de entorno:
+2. Define variables de entorno (puedes copiar `.env.example`):
 
 ```bash
-export APP_PASSWORD="tu_password_privada"
+export APP_PASSWORD="dp12345"
+export SUPABASE_URL="https://xxxx.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="tu_service_role_key"
+export SUPABASE_BUCKET="e_bandeja_docs"
 ```
 
 3. Inicia el servidor:
@@ -50,8 +53,11 @@ http://localhost:3000
 3. Render detectara `render.yaml` y usara:
    - `buildCommand`: `npm install`
    - `startCommand`: `npm start`
-4. Agrega variable de entorno en Render:
-   - `APP_PASSWORD` con tu contrasena privada
+4. Agrega variables de entorno en Render:
+   - `APP_PASSWORD` (ejemplo: `dp12345`)
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_BUCKET` (opcional, default: `e_bandeja_docs`)
 
 Tambien puedes configurar manualmente esos comandos si prefieres no usar Blueprint.
 
@@ -60,3 +66,12 @@ Tambien puedes configurar manualmente esos comandos si prefieres no usar Bluepri
 - La contrasena ya no se guarda en el frontend.
 - El login se valida en backend con cookie `HttpOnly`.
 - Hay limite de intentos de login para reducir fuerza bruta.
+- Los archivos se guardan en Supabase Storage (persisten entre sesiones y redeploys).
+
+## Supabase
+
+1. En tu proyecto de Supabase, crea (o deja que la app cree) un bucket llamado `e_bandeja_docs`.
+2. Usa `SUPABASE_SERVICE_ROLE_KEY` solo en el backend (nunca en frontend).
+3. Recomendada configuracion del bucket:
+   - Bucket privado.
+   - Limite de tamano acorde a tu uso (la app limita a 20MB por archivo).

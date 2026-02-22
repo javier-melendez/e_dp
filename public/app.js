@@ -1,6 +1,7 @@
 let documents = [];
 let activeDocId = null;
 let primaryAction = null;
+let loadingDocuments = false;
 
 const el = {};
 
@@ -18,6 +19,7 @@ async function init() {
   const authenticated = await checkAuthStatus();
   if (authenticated) {
     showMainInterface();
+    await loadDocuments();
   } else {
     showLoginInterface();
   }
@@ -81,7 +83,6 @@ function bindEvents() {
 
 async function checkPassword() {
   const password = el.passwordInput.value;
-
   if (!password) {
     window.alert("Ingresa la contrasena");
     return;
@@ -99,19 +100,15 @@ async function checkPassword() {
       body: JSON.stringify({ password })
     });
 
-    if (response.ok) {
-      el.passwordInput.value = "";
-      showMainInterface();
+    if (!response.ok) {
+      const payload = await safeReadJson(response);
+      window.alert(payload.error || "Contrasena incorrecta");
       return;
     }
 
-    const payload = await safeReadJson(response);
-    if (response.status === 429) {
-      window.alert(payload.error || "Demasiados intentos fallidos.");
-      return;
-    }
-
-    window.alert(payload.error || "Contrasena incorrecta");
+    el.passwordInput.value = "";
+    showMainInterface();
+    await loadDocuments();
   } catch (_error) {
     window.alert("No fue posible validar la contrasena.");
   } finally {
@@ -123,9 +120,7 @@ async function checkAuthStatus() {
   try {
     const response = await fetch("/api/auth/status", {
       method: "GET",
-      headers: {
-        Accept: "application/json"
-      }
+      headers: { Accept: "application/json" }
     });
 
     if (!response.ok) {
@@ -143,12 +138,10 @@ async function logout() {
   try {
     await fetch("/api/auth/logout", {
       method: "POST",
-      headers: {
-        Accept: "application/json"
-      }
+      headers: { Accept: "application/json" }
     });
   } catch (_error) {
-    // No-op: aunque falle el logout remoto, hacemos reload para limpiar UI.
+    // No-op.
   }
 }
 
@@ -180,46 +173,122 @@ async function safeReadJson(response) {
   }
 }
 
+async function loadDocuments(options = {}) {
+  if (loadingDocuments) {
+    return;
+  }
+
+  loadingDocuments = true;
+
+  try {
+    const response = await fetch("/api/documents", {
+      method: "GET",
+      headers: { Accept: "application/json" }
+    });
+
+    if (response.status === 401) {
+      showLoginInterface();
+      documents = [];
+      activeDocId = null;
+      render();
+      return;
+    }
+
+    if (!response.ok) {
+      const payload = await safeReadJson(response);
+      window.alert(payload.error || "No fue posible cargar documentos.");
+      return;
+    }
+
+    const payload = await safeReadJson(response);
+    const previousById = new Map(documents.map((doc) => [doc.id, doc]));
+    const nextDocuments = Array.isArray(payload.documents) ? payload.documents.map((item) => mapApiDocument(item, previousById.get(item.id))) : [];
+
+    documents = nextDocuments;
+
+    const preferredId = options.focusId || activeDocId;
+    if (preferredId && documents.some((doc) => doc.id === preferredId)) {
+      activeDocId = preferredId;
+    } else if (documents.length > 0) {
+      activeDocId = documents[0].id;
+    } else {
+      activeDocId = null;
+    }
+
+    render();
+
+    if (activeDocId) {
+      showPreview(activeDocId);
+    } else {
+      resetPreview();
+    }
+  } catch (_error) {
+    window.alert("No fue posible cargar los documentos.");
+  } finally {
+    loadingDocuments = false;
+  }
+}
+
+function mapApiDocument(apiDoc, previousDoc) {
+  const type = String(apiDoc.type || "").toLowerCase();
+  const isDocx = type === "docx";
+  const keepDocxPreview = Boolean(previousDoc && previousDoc.status === apiDoc.status && previousDoc.name === apiDoc.name && previousDoc.docxHtml);
+
+  return {
+    id: String(apiDoc.id || ""),
+    name: String(apiDoc.name || "documento"),
+    type: type || getExtension(apiDoc.name),
+    status: String(apiDoc.status || "Pendiente"),
+    date: formatServerDate(apiDoc.createdAt),
+    createdAt: String(apiDoc.createdAt || new Date().toISOString()),
+    url: String(apiDoc.fileUrl || ""),
+    docxHtml: keepDocxPreview ? previousDoc.docxHtml : "",
+    previewError: keepDocxPreview ? previousDoc.previewError : "",
+    isPreviewReady: !isDocx || keepDocxPreview,
+    isPreviewLoading: false
+  };
+}
+
+function formatServerDate(isoDate) {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 async function handleNewUpload(event) {
   const file = event.target.files && event.target.files[0];
+  event.target.value = "";
   if (!file) {
     return;
   }
 
-  const fileType = getExtension(file.name);
-  const newDoc = {
-    id: generateId(),
-    name: file.name,
-    type: fileType,
-    status: "Pendiente",
-    date: formatNow(),
-    url: URL.createObjectURL(file),
-    docxHtml: "",
-    previewError: "",
-    isPreviewReady: fileType !== "docx"
-  };
+  const extension = getExtension(file.name);
+  if (extension !== "pdf" && extension !== "docx") {
+    window.alert("Solo se permiten archivos PDF y DOCX.");
+    return;
+  }
 
-  documents.unshift(newDoc);
-  event.target.value = "";
-  render();
-  showPreview(newDoc.id);
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
 
-  if (fileType === "docx") {
-    const preview = await buildDocxPreview(file);
-    const currentDoc = documents.find((doc) => doc.id === newDoc.id);
-    if (!currentDoc) {
+    const response = await fetch("/api/documents", {
+      method: "POST",
+      body: formData
+    });
+
+    const payload = await safeReadJson(response);
+    if (!response.ok) {
+      window.alert(payload.error || "No fue posible cargar el archivo.");
       return;
     }
 
-    currentDoc.docxHtml = preview.html;
-    currentDoc.previewError = preview.error;
-    currentDoc.isPreviewReady = true;
-
-    if (activeDocId === currentDoc.id) {
-      showPreview(currentDoc.id);
-    } else {
-      render();
-    }
+    await loadDocuments({ focusId: payload.document?.id || null });
+  } catch (_error) {
+    window.alert("No fue posible cargar el archivo.");
   }
 }
 
@@ -253,7 +322,6 @@ function showPreview(id) {
     el.btnAction.className = "px-4 py-1.5 bg-indigo-600 text-white text-xs rounded-xl font-bold hover:bg-indigo-700 transition";
     el.btnAction.textContent = "Descargar y firmar";
     primaryAction = () => {
-      window.alert("Simulacion de descarga: " + doc.name);
       toggleOverlay(true);
     };
   } else {
@@ -270,27 +338,58 @@ function showPreview(id) {
     el.previewIframe.removeAttribute("src");
 
     if (!doc.isPreviewReady) {
-      el.previewIframe.srcdoc = buildInfoIframe(
-        "Procesando DOCX",
-        "Estamos generando la vista previa del documento."
-      );
+      el.previewIframe.srcdoc = buildInfoIframe("Procesando DOCX", "Estamos generando la vista previa del documento.");
+      if (!doc.isPreviewLoading) {
+        loadRemoteDocxPreview(doc.id);
+      }
     } else if (doc.previewError) {
-      el.previewIframe.srcdoc = buildInfoIframe(
-        "No se pudo renderizar el DOCX",
-        doc.previewError
-      );
+      el.previewIframe.srcdoc = buildInfoIframe("No se pudo renderizar el DOCX", doc.previewError);
     } else {
       el.previewIframe.srcdoc = buildDocxIframe(doc.docxHtml);
     }
   } else {
     el.previewIframe.removeAttribute("src");
-    el.previewIframe.srcdoc = buildInfoIframe(
-      "Formato no compatible",
-      "Solo se soporta vista previa para PDF y DOCX."
-    );
+    el.previewIframe.srcdoc = buildInfoIframe("Formato no compatible", "Solo se soporta vista previa para PDF y DOCX.");
   }
 
   render();
+}
+
+async function loadRemoteDocxPreview(docId) {
+  const doc = documents.find((item) => item.id === docId);
+  if (!doc || doc.type !== "docx" || doc.isPreviewLoading) {
+    return;
+  }
+
+  doc.isPreviewLoading = true;
+  doc.previewError = "";
+  doc.isPreviewReady = false;
+
+  try {
+    const response = await fetch(doc.url, { method: "GET" });
+    if (!response.ok) {
+      throw new Error("No se pudo descargar DOCX");
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const preview = await buildDocxPreviewFromArrayBuffer(arrayBuffer);
+
+    doc.docxHtml = preview.html;
+    doc.previewError = preview.error;
+    doc.isPreviewReady = true;
+    doc.isPreviewLoading = false;
+  } catch (_error) {
+    doc.docxHtml = "";
+    doc.previewError = "No se pudo cargar el archivo DOCX para vista previa.";
+    doc.isPreviewReady = true;
+    doc.isPreviewLoading = false;
+  }
+
+  if (activeDocId === docId) {
+    showPreview(docId);
+  } else {
+    render();
+  }
 }
 
 function toggleOverlay(show) {
@@ -299,64 +398,64 @@ function toggleOverlay(show) {
 
 async function completeFirma(event) {
   const file = event.target.files && event.target.files[0];
+  event.target.value = "";
   if (!file || !activeDocId) {
     return;
   }
 
-  const doc = documents.find((item) => item.id === activeDocId);
-  if (!doc) {
+  const extension = getExtension(file.name);
+  if (extension !== "pdf" && extension !== "docx") {
+    window.alert("Solo se permiten archivos PDF y DOCX.");
     return;
   }
 
-  revokeBlobUrl(doc.url);
-  doc.status = "Firmado";
-  doc.name = "FIRMADO_" + doc.name;
-  doc.type = getExtension(file.name) || doc.type;
-  doc.date = formatNow();
-  doc.url = URL.createObjectURL(file);
-  doc.docxHtml = "";
-  doc.previewError = "";
-  doc.isPreviewReady = doc.type !== "docx";
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
 
-  event.target.value = "";
-  toggleOverlay(false);
-  showPreview(doc.id);
-  render();
+    const response = await fetch("/api/documents/" + encodeURIComponent(activeDocId) + "/sign", {
+      method: "POST",
+      body: formData
+    });
 
-  if (doc.type === "docx") {
-    const preview = await buildDocxPreview(file);
-    const currentDoc = documents.find((item) => item.id === doc.id);
-    if (!currentDoc) {
+    const payload = await safeReadJson(response);
+    if (!response.ok) {
+      window.alert(payload.error || "No fue posible firmar el documento.");
       return;
     }
 
-    currentDoc.docxHtml = preview.html;
-    currentDoc.previewError = preview.error;
-    currentDoc.isPreviewReady = true;
-
-    if (activeDocId === currentDoc.id) {
-      showPreview(currentDoc.id);
-    } else {
-      render();
-    }
+    toggleOverlay(false);
+    await loadDocuments({ focusId: payload.document?.id || activeDocId });
+  } catch (_error) {
+    window.alert("No fue posible firmar el documento.");
   }
 }
 
-function deleteDoc(id) {
-  const index = documents.findIndex((doc) => doc.id === id);
-  if (index === -1) {
+async function deleteDoc(id) {
+  if (!id) {
     return;
   }
 
-  revokeBlobUrl(documents[index].url);
-  documents.splice(index, 1);
+  try {
+    const response = await fetch("/api/documents/" + encodeURIComponent(id), {
+      method: "DELETE",
+      headers: { Accept: "application/json" }
+    });
 
-  if (activeDocId === id) {
-    activeDocId = null;
-    resetPreview();
+    const payload = await safeReadJson(response);
+    if (!response.ok) {
+      window.alert(payload.error || "No fue posible eliminar el documento.");
+      return;
+    }
+
+    if (activeDocId === id) {
+      activeDocId = null;
+    }
+
+    await loadDocuments();
+  } catch (_error) {
+    window.alert("No fue posible eliminar el documento.");
   }
-
-  render();
 }
 
 function render() {
@@ -418,7 +517,7 @@ function resetPreview() {
   primaryAction = null;
 }
 
-async function buildDocxPreview(file) {
+async function buildDocxPreviewFromArrayBuffer(arrayBuffer) {
   if (!window.mammoth || typeof window.mammoth.convertToHtml !== "function") {
     return {
       html: "",
@@ -427,7 +526,6 @@ async function buildDocxPreview(file) {
   }
 
   try {
-    const arrayBuffer = await file.arrayBuffer();
     const result = await window.mammoth.convertToHtml({ arrayBuffer });
     const html = sanitizeDocxHtml(result.value || "");
 
@@ -497,27 +595,9 @@ function buildInfoIframe(title, message) {
   );
 }
 
-function generateId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-
-  return String(Date.now()) + "-" + Math.random().toString(16).slice(2);
-}
-
 function getExtension(fileName) {
-  const parts = fileName.split(".");
-  return parts.length > 1 ? parts.pop().toLowerCase() : "";
-}
-
-function formatNow() {
-  return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function revokeBlobUrl(url) {
-  if (typeof url === "string" && url.startsWith("blob:")) {
-    URL.revokeObjectURL(url);
-  }
+  const parts = String(fileName || "").split(".");
+  return parts.length > 1 ? String(parts.pop()).toLowerCase() : "";
 }
 
 function escapeHtml(value) {

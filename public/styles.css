@@ -1,0 +1,34 @@
+body {
+  background-color: #f8fafc;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.hidden-section {
+  display: none;
+}
+
+.preview-container {
+  height: calc(100vh - 180px);
+  min-height: 420px;
+}
+
+.doc-card {
+  transition: all 0.2s;
+  border-left-width: 4px;
+}
+
+.doc-card.pending {
+  border-left-color: #f59e0b;
+}
+
+.doc-card.completed {
+  border-left-color: #10b981;
+}
+
+.doc-card:hover {
+  transform: translateX(4px);
+}
+
+#previewIframe {
+  background-color: #ffffff;
+}

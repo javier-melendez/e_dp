@@ -1,0 +1,17 @@
+{
+  "name": "e-bandeja-render",
+  "version": "1.0.0",
+  "private": true,
+  "description": "E-Bandeja inteligente lista para Render Web Service",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

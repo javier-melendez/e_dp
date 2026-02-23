@@ -26,7 +26,9 @@ const ALLOWED_EXTENSIONS = new Set(["pdf", "docx"]);
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/octet-stream"
+  "application/octet-stream",
+  "application/zip",
+  "application/msword"
 ]);
 
 if (!APP_PASSWORD) {
@@ -398,13 +400,36 @@ function normalizeDocumentId(rawValue) {
 
 function sanitizeFileName(fileName, extension) {
   const extensionWithDot = extension ? "." + extension : "";
-  const lowerName = String(fileName || "").toLowerCase();
-  const withoutExtension = lowerName.endsWith(extensionWithDot) ? String(fileName || "").slice(0, -extensionWithDot.length) : String(fileName || "");
-  const cleanedBase = withoutExtension
-    .replace(/[\/\\]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const safeBase = cleanedBase || "derecho_peticion";
+  const original = String(fileName || "");
+
+  // Remove the extension part from the provided name when present
+  const withoutExtension = original.endsWith(extensionWithDot)
+    ? original.slice(0, -extensionWithDot.length)
+    : original;
+
+  // Normalize unicode to decompose accents, then remove combining marks
+  let normalized = withoutExtension.normalize ? withoutExtension.normalize("NFKD") : withoutExtension;
+  normalized = normalized.replace(/\p{Diacritic}/gu, "");
+  // Fallback for engines where \p{Diacritic} may not be supported
+  normalized = normalized.replace(/[\u0300-\u036f]/g, "");
+
+  // Replace characters that are commonly problematic in filenames/URLs
+  // Keep letters, numbers, spaces, dots, underscores and dashes; replace others with underscore
+  normalized = normalized.replace(/[^\p{L}\p{N} ._\-]/gu, "_");
+
+  // Collapse whitespace and trim
+  let cleanedBase = normalized.replace(/\s+/g, " ").trim();
+  if (!cleanedBase) {
+    cleanedBase = "derecho_peticion";
+  }
+
+  // Limit length to avoid extremely long names
+  const maxBaseLength = 200;
+  if (cleanedBase.length > maxBaseLength) {
+    cleanedBase = cleanedBase.slice(0, maxBaseLength);
+  }
+
+  const safeBase = cleanedBase;
   return safeBase + extensionWithDot;
 }
 
@@ -428,14 +453,32 @@ function validateUploadedFile(file) {
 
   const extension = getExtension(file.originalname);
   if (!ALLOWED_EXTENSIONS.has(extension)) {
+    console.error("Archivo rechazado por extension no permitida", {
+      originalname: file.originalname,
+      extension,
+      mimetype: file.mimetype,
+      size: file.size || (file.buffer && file.buffer.length)
+    });
     throw createHttpError(400, "Formato invalido. Solo se permiten PDF y DOCX para derechos de peticion.");
   }
 
   if (file.mimetype && !ALLOWED_MIME_TYPES.has(file.mimetype)) {
+    console.error("Archivo rechazado por MIME no permitido", {
+      originalname: file.originalname,
+      extension,
+      mimetype: file.mimetype,
+      size: file.size || (file.buffer && file.buffer.length)
+    });
     throw createHttpError(400, "Tipo MIME no permitido para este derecho de peticion.");
   }
 
   if (!file.buffer || file.buffer.length === 0) {
+    console.error("Archivo recibido vacio", {
+      originalname: file.originalname,
+      extension,
+      mimetype: file.mimetype,
+      size: file.size || (file.buffer && file.buffer.length)
+    });
     throw createHttpError(400, "El archivo recibido esta vacio.");
   }
 
@@ -614,12 +657,30 @@ async function toClientDocument(record) {
 }
 
 async function uploadToStorage(storagePath, file, options = {}) {
-  const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload(storagePath, file.buffer, {
-    contentType: file.mimetype || undefined,
-    upsert: options.upsert === true
-  });
+  try {
+    console.log("Subiendo a Supabase:", {
+      bucket: SUPABASE_BUCKET,
+      path: storagePath,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size || (file.buffer && file.buffer.length)
+    });
 
-  if (error) {
+    const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload(storagePath, file.buffer, {
+      contentType: file.mimetype || undefined,
+      upsert: options.upsert === true
+    });
+
+    if (error) {
+      console.error("Error subiendo archivo a Supabase:", error);
+      throw createHttpError(500, "No se pudo cargar el archivo del derecho de peticion en Supabase Storage: " + (error.message || JSON.stringify(error)));
+    }
+  } catch (err) {
+    // Re-lanzar errores HTTP ya formateados
+    if (err && err.statusCode) {
+      throw err;
+    }
+    console.error("Error inesperado durante la subida a Supabase:", err);
     throw createHttpError(500, "No se pudo cargar el archivo del derecho de peticion en Supabase Storage.");
   }
 }

@@ -42,7 +42,8 @@ function cacheElements() {
   el.previewActions = document.getElementById("previewActions");
   el.previewTitle = document.getElementById("previewTitle");
   el.statusDot = document.getElementById("statusDot");
-  el.btnAction = document.getElementById("btnAction");
+  el.btnDownload = document.getElementById("btnDownload");
+  el.btnSign = document.getElementById("btnSign");
   el.previewIframe = document.getElementById("previewIframe");
 }
 
@@ -72,10 +73,12 @@ function bindEvents() {
     }
   });
 
-  el.btnAction.addEventListener("click", () => {
-    if (typeof primaryAction === "function") {
-      primaryAction();
-    }
+  el.btnDownload.addEventListener("click", () => {
+    downloadActiveDoc();
+  });
+
+  el.btnSign.addEventListener("click", () => {
+    toggleOverlay(true);
   });
 
   el.docList.addEventListener("click", handleDocListClick);
@@ -319,16 +322,16 @@ function showPreview(id) {
 
   if (doc.status === "Pendiente") {
     el.statusDot.className = "w-3 h-3 rounded-full bg-amber-500 animate-pulse";
-    el.btnAction.className = "px-4 py-1.5 bg-indigo-600 text-white text-xs rounded-xl font-bold hover:bg-indigo-700 transition";
-    el.btnAction.textContent = "Descargar para revisar y firmar";
-    primaryAction = () => {
-      toggleOverlay(true);
-    };
+    el.btnDownload.className = "px-4 py-1.5 bg-indigo-600 text-white text-xs rounded-xl font-bold hover:bg-indigo-700 transition";
+    el.btnSign.className = "px-4 py-1.5 bg-amber-500 text-white text-xs rounded-xl font-bold hover:bg-amber-600 transition";
+    el.btnDownload.disabled = false;
+    el.btnSign.disabled = false;
   } else {
     el.statusDot.className = "w-3 h-3 rounded-full bg-green-500";
-    el.btnAction.className = "px-4 py-1.5 bg-green-100 text-green-700 text-xs rounded-xl font-bold cursor-default";
-    el.btnAction.textContent = "Documento firmado";
-    primaryAction = null;
+    el.btnDownload.className = "px-4 py-1.5 bg-green-600 text-white text-xs rounded-xl font-bold hover:bg-green-700 transition";
+    el.btnDownload.disabled = false;
+    el.btnSign.className = "px-4 py-1.5 bg-green-100 text-green-700 text-xs rounded-xl font-bold cursor-default";
+    el.btnSign.disabled = true;
   }
 
   if (doc.type === "pdf") {
@@ -607,4 +610,39 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+async function downloadActiveDoc() {
+  if (!activeDocId) {
+    return;
+  }
+
+  const doc = documents.find((d) => d.id === activeDocId);
+  if (!doc || !doc.url) {
+    window.alert("No hay archivo disponible para descargar.");
+    return;
+  }
+
+  try {
+    const response = await fetch(doc.url, { method: "GET" });
+    if (!response.ok) {
+      throw new Error("No se pudo descargar el archivo.");
+    }
+
+    const blob = await response.blob();
+    const ext = doc.type || getExtension(doc.name) || "pdf";
+    const safeName = (doc.name || "documento").replace(/\s+/g, "_");
+    const filename = safeName.includes(".") ? safeName : safeName + "." + ext;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (_error) {
+    window.alert("No fue posible descargar el archivo.");
+  }
 }
